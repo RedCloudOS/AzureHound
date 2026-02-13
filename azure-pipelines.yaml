@@ -1,0 +1,100 @@
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  PKG_NAME: azurehound
+  DEB_VERSION: 2.9.1~rolling
+  DIST: redcloud
+  COMPONENT: main
+
+stages:
+- stage: Build
+  displayName: Build & Package Debian
+  jobs:
+  - job: Debian
+    displayName: Build Debian Package
+    pool:
+      vmImage: ubuntu-latest
+
+    strategy:
+      matrix:
+        amd64:
+          GOARCH: amd64
+
+    steps:
+    - checkout: self
+
+    - script: |
+        set -euo pipefail
+
+        SHORT_SHA=$(git rev-parse --short=12 HEAD)
+
+        GOOS=linux GOARCH=$(GOARCH) \
+        go build \
+          -ldflags="-s -w \
+            -X github.com/bloodhoundad/azurehound/v2/constants.Version=$(DEB_VERSION) \
+            -X github.com/bloodhoundad/azurehound/v2/constants.BuildCommit=${SHORT_SHA}" \
+          -o azurehound
+      workingDirectory: '$(system.defaultWorkingDirectory)'
+      displayName: Build Binary
+
+    - script: |
+        set -euo pipefail
+  
+        mkdir -p pkg/DEBIAN
+        mkdir -p pkg/usr/bin
+
+        cp azurehound pkg/usr/bin/azurehound
+        chmod 0755 pkg/usr/bin/azurehound
+
+        cat <<EOF > pkg/DEBIAN/control
+        Package: $(PKG_NAME)
+        Version: $(DEB_VERSION)
+        Section: utils
+        Priority: optional
+        Architecture: amd64
+        Maintainer: RedCloud Team <redcloud@cyberwarfare.live>
+        Description: Azure Active Directory reconnaissance tool
+        EOF
+
+        dpkg-deb --build pkg \
+          $(PKG_NAME)_$(DEB_VERSION)_amd64.deb
+      displayName: Create Debian Package
+
+    - script: |
+        set -euo pipefail
+
+        mkdir -p repo/pool/$(COMPONENT)
+        mkdir -p repo/dists/$(DIST)/$(COMPONENT)/binary-amd64
+
+        mv $(PKG_NAME)_*.deb repo/pool/$(COMPONENT)/
+
+        cd repo
+        dpkg-scanpackages pool /dev/null \
+          > dists/$(DIST)/$(COMPONENT)/binary-amd64/Packages
+
+        gzip -kf dists/$(DIST)/$(COMPONENT)/binary-amd64/Packages
+
+        cat <<EOF > dists/$(DIST)/Release
+        Origin: AzureHound
+        Label: AzureHound
+        Suite: $(DIST)
+        Codename: $(DIST)
+        Architectures: amd64
+        Components: $(COMPONENT)
+        Description: AzureHound APT Repository
+        EOF
+      displayName: Prepare APT Repository Metadata
+      condition: ne(variables['Build.Reason'], 'PullRequest')
+
+    - task: CopyFilesOverSSH@0
+      displayName: Upload APT Repo
+      inputs:
+        sshEndpoint: Prod-APT-Repo-VM
+        sourceFolder: '$(system.defaultWorkingDirectory)/repo'
+        contents: '**'
+        targetFolder: '/opt/apt-repo'
+        overwrite: false
+        cleanTargetFolder: false
