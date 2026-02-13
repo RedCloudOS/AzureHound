@@ -4,7 +4,7 @@ trigger:
       - main
 
 variables:
-  PKG_NAME: azurehound
+  PKG_NAME: AzureHound
   DEB_VERSION: 2.9.1~rolling
   DIST: redcloud
   COMPONENT: main
@@ -36,7 +36,7 @@ stages:
           -ldflags="-s -w \
             -X github.com/bloodhoundad/azurehound/v2/constants.Version=$(DEB_VERSION) \
             -X github.com/bloodhoundad/azurehound/v2/constants.BuildCommit=${SHORT_SHA}" \
-          -o azurehound
+          -o AzureHound
       workingDirectory: '$(system.defaultWorkingDirectory)'
       displayName: Build Binary
 
@@ -46,8 +46,8 @@ stages:
         mkdir -p pkg/DEBIAN
         mkdir -p pkg/usr/bin
 
-        cp azurehound pkg/usr/bin/azurehound
-        chmod 0755 pkg/usr/bin/azurehound
+        cp AzureHound pkg/usr/bin/AzureHound
+        chmod 0755 pkg/usr/bin/AzureHound
 
         cat <<EOF > pkg/DEBIAN/control
         Package: $(PKG_NAME)
